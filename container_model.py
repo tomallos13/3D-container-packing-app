@@ -61,6 +61,7 @@ def remove_package():
 def choose_container():
     for container in containers:
         if can_fit_all_packages(container, packages):
+            print(container)
             selected_container_label.config(text=f"Selected container: {container[0]}x{container[1]}x{container[2]}, Max weight: {container[3]}")
             visualize_packages(container, packages)
             return
@@ -68,13 +69,28 @@ def choose_container():
 
 
 def can_fit_all_packages(container, packages):
+    max_weight = container[3]  # Maksymalna waga dla kontenera
+    current_weight = 0  # Obecna łączna waga umieszczonych pakietów
+
+    # Inicjalizacja przestrzeni kontenera
     space = [[[True for _ in range(container[2])] for _ in range(container[1])] for _ in range(container[0])]
+    
+    # Sortowanie pakietów
     sorted_packages = sorted(packages, key=lambda x: -x[0][0] * x[0][1] * x[0][2] * x[2])
+    
     for dimensions, weight, quantity, _ in sorted_packages:
+        total_weight = weight * quantity  # Całkowita waga wszystkich pakietów tego typu
+        current_weight += total_weight  # Dodanie wagi pakietów do łącznej wagi
+
+        if current_weight > max_weight:
+            return False  # Nie można dopasować, jeśli przekracza maksymalną wagę
+
         for _ in range(quantity):
             if not place_package_simulated(dimensions, space, container):
-                return False
-    return True
+                return False  # Jeśli nie można umieścić pakietu, zwraca False
+
+    return True  # Wszystkie pakiety pasują do kontenera
+
 
 def place_package_simulated(dimensions, space, container):
     
@@ -105,7 +121,8 @@ def can_place(x, y, z, dimensions, space, container):
     return True
 
 def visualize_packages(container, packages):
-    fig = plt.figure()
+
+    fig = plt.figure(figsize=(12,8))
     ax = fig.add_subplot(111, projection='3d')
     ax.bar3d(0, 0, 0, container[0], container[1], container[2], alpha=0.1, color='gray', edgecolor='black')
     space = [[[True for _ in range(container[2])] for _ in range(container[1])] for _ in range(container[0])]
@@ -125,9 +142,17 @@ def visualize_packages(container, packages):
                 else:
                     continue
                 break
-    ax.set_xlabel('Length')
+
+    mapping_container = {   
+    (580, 225, 220, 25000):"20ft",
+    (1190, 225, 220, 26700):"40ft"}
+     # Ustawienie tytułu wykresu na podstawie mapowania kontenerów
+    container_name = mapping_container.get(container, "Unknown Container")
+
+    ax.set_xlabel('Length', labelpad=20)
     ax.set_ylabel('Width')
     ax.set_zlabel('Height')
+    ax.set_title(f'Container: {container_name}')
     ax.set_box_aspect([4, 1, 1])  # Equal aspect ratio
     plt.show()
 
