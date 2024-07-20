@@ -2,14 +2,18 @@ import tkinter as tk
 from tkinter import ttk
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from typing import List, Tuple
+from numba import jit
+import numpy as np
+
 
 containers = [
     (580, 225, 220, 25000),  # Container 1 dimensions and max weight
     (1190, 225, 220, 26700),  # Container 2 dimensions and max weight
 ]
 
-packages = []
-colors = [
+packages: List = []
+colors: List[Tuple] = [
     (0.121, 0.466, 0.705),  # Blue
     (1.000, 0.498, 0.055),  # Orange
     (0.172, 0.627, 0.172),  # Green
@@ -32,8 +36,6 @@ colors = [
     (0.816, 0.376, 0.494)   # Chestnut
 ]
 
-
-
 def submit_package():
     dimensions = (int(float(entry_length.get())), int(float(entry_width.get())), int(float(entry_height.get())))
     weight = float(entry_weight.get())
@@ -41,8 +43,6 @@ def submit_package():
     color = colors[len(packages) % len(colors)]
     packages.append((dimensions, weight, quantity, color))
     update_packages_list()
-
-
 
 def update_packages_list():
     listbox_packages.delete(0, tk.END)
@@ -63,17 +63,18 @@ def choose_container():
         if can_fit_all_packages(container, packages):
             print(container)
             selected_container_label.config(text=f"Selected container: {container[0]}x{container[1]}x{container[2]}, Max weight: {container[3]}")
-            visualize_packages(container, packages)
+            package_positions = generate_package_positions(container, packages)
+            visualize_packages(container, package_positions)
             return
     selected_container_label.config(text="No container found that can fit all packages.")
 
-
+@jit(nopython=True)
 def can_fit_all_packages(container, packages):
     max_weight = container[3]  # Maksymalna waga dla kontenera
     current_weight = 0  # Obecna łączna waga umieszczonych pakietów
 
     # Inicjalizacja przestrzeni kontenera
-    space = [[[True for _ in range(container[2])] for _ in range(container[1])] for _ in range(container[0])]
+    space = np.ones((container[0], container[1], container[2]), dtype=np.bool_)
     
     # Sortowanie pakietów
     sorted_packages = sorted(packages, key=lambda x: -x[0][0] * x[0][1] * x[0][2] * x[2])
@@ -91,9 +92,8 @@ def can_fit_all_packages(container, packages):
 
     return True  # Wszystkie pakiety pasują do kontenera
 
-
+@jit(nopython=True)
 def place_package_simulated(dimensions, space, container):
-    
     for x in range(container[0] - dimensions[0] + 1):
         for y in range(container[1] - dimensions[1] + 1):
             for z in range(container[2] - dimensions[2] + 1):
@@ -102,38 +102,32 @@ def place_package_simulated(dimensions, space, container):
                     return True
     return False
 
+@jit(nopython=True)
 def mark_space_as_filled(x, y, z, dimensions, space):
     dx, dy, dz = dimensions
-    for i in range(dx):
-        for j in range(dy):
-            for k in range(dz):
-                space[x + i][y + j][z + k] = False
+    space[x:x+dx, y:y+dy, z:z+dz] = False
 
+@jit(nopython=True)
 def can_place(x, y, z, dimensions, space, container):
     dx, dy, dz = dimensions
     if x + dx > container[0] or y + dy > container[1] or z + dz > container[2]:
         return False
-    for i in range(dx):
-        for j in range(dy):
-            for k in range(dz):
-                if not space[x + i][y + j][z + k]:
-                    return False
+    if not np.all(space[x:x+dx, y:y+dy, z:z+dz]):
+        return False
     return True
 
-def visualize_packages(container, packages):
-
-    fig = plt.figure(figsize=(12,8))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.bar3d(0, 0, 0, container[0], container[1], container[2], alpha=0.1, color='gray', edgecolor='black')
-    space = [[[True for _ in range(container[2])] for _ in range(container[1])] for _ in range(container[0])]
+@jit(nopython=True)
+def generate_package_positions(container, packages):
+    space = np.ones((container[0], container[1], container[2]), dtype=np.bool_)
     sorted_packages = sorted(packages, key=lambda x: -x[0][0] * x[0][1] * x[0][2] * x[2])
+    positions = []
     for dimensions, weight, quantity, color in sorted_packages:
         for _ in range(quantity):
             for x in range(container[0] - dimensions[0] + 1):
                 for y in range(container[1] - dimensions[1] + 1):
                     for z in range(container[2] - dimensions[2] + 1):
                         if can_place(x, y, z, dimensions, space, container):
-                            ax.bar3d(x, y, z, dimensions[0], dimensions[1], dimensions[2], color=color, edgecolor='black', linewidth=0.5)
+                            positions.append((x, y, z, dimensions, color))
                             mark_space_as_filled(x, y, z, dimensions, space)
                             break
                     else:
@@ -142,13 +136,23 @@ def visualize_packages(container, packages):
                 else:
                     continue
                 break
+    return positions
+
+def visualize_packages(container, package_positions):
+    fig = plt.figure(figsize=(12,8))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.bar3d(0, 0, 0, container[0], container[1], container[2], alpha=0.1, color='gray', edgecolor='black')
+
+    for x, y, z, dimensions, color in package_positions:
+        ax.bar3d(x, y, z, dimensions[0], dimensions[1], dimensions[2], color=color, edgecolor='black', linewidth=0.5)
 
     mapping_container = {   
-    (580, 225, 220, 25000):"20ft",
-    (1190, 225, 220, 26700):"40ft"}
-     # Ustawienie tytułu wykresu na podstawie mapowania kontenerów
-    container_name = mapping_container.get(container, "Unknown Container")
+        (580, 225, 220, 25000): "20ft",
+        (1190, 225, 220, 26700): "40ft"
+    }
 
+    # Ustawienie tytułu wykresu na podstawie mapowania kontenerów
+    container_name = mapping_container.get(container, "Unknown Container")
     ax.set_xlabel('Length', labelpad=20)
     ax.set_ylabel('Width')
     ax.set_zlabel('Height')
@@ -163,35 +167,31 @@ ttk.Label(root, text="Length:").grid(row=0, column=0)
 entry_length = ttk.Entry(root)
 entry_length.grid(row=0, column=1)
 
-ttk.Label(root, text="Width:").grid(row=1, column=0)
+ttk.Label(root, text="Width:").grid(row=0, column=2)
 entry_width = ttk.Entry(root)
-entry_width.grid(row=1, column=1)
+entry_width.grid(row=0, column=3)
 
-ttk.Label(root, text="Height:").grid(row=2, column=0)
+ttk.Label(root, text="Height:").grid(row=0, column=4)
 entry_height = ttk.Entry(root)
-entry_height.grid(row=2, column=1)
+entry_height.grid(row=0, column=5)
 
-ttk.Label(root, text="Weight:").grid(row=3, column=0)
+ttk.Label(root, text="Weight:").grid(row=1, column=0)
 entry_weight = ttk.Entry(root)
-entry_weight.grid(row=3, column=1)
+entry_weight.grid(row=1, column=1)
 
-ttk.Label(root, text="Quantity:").grid(row=4, column=0)
+ttk.Label(root, text="Quantity:").grid(row=1, column=2)
 entry_quantity = ttk.Entry(root)
-entry_quantity.grid(row=4, column=1)
+entry_quantity.grid(row=1, column=3)
 
-submit_button = ttk.Button(root, text="Submit", command=submit_package)
-submit_button.grid(row=5, column=1)
+ttk.Button(root, text="Submit Package", command=submit_package).grid(row=1, column=4)
+ttk.Button(root, text="Remove Package", command=remove_package).grid(row=1, column=5)
 
-remove_button = ttk.Button(root, text="Remove Selected Package", command=remove_package)
-remove_button.grid(row=7, column=1)
+listbox_packages = tk.Listbox(root, width=70, height=10)
+listbox_packages.grid(row=2, column=0, columnspan=6)
 
-choose_container_button = ttk.Button(root, text="Choose Container", command=choose_container)
-choose_container_button.grid(row=5, column=2)
+selected_container_label = ttk.Label(root, text="")
+selected_container_label.grid(row=3, column=0, columnspan=6)
 
-listbox_packages = tk.Listbox(root, height=10, width=50)
-listbox_packages.grid(row=6, column=0, columnspan=3)
-
-selected_container_label = ttk.Label(root, text="No container selected yet.")
-selected_container_label.grid(row=8, column=0, columnspan=3)
+ttk.Button(root, text="Choose Container", command=choose_container).grid(row=4, column=0, columnspan=6)
 
 root.mainloop()
