@@ -6,7 +6,6 @@ from typing import List, Tuple
 from numba import jit
 import numpy as np
 
-
 containers = [
     (580, 225, 220, 25000),  
     (1190, 225, 220, 26700),
@@ -41,14 +40,37 @@ def submit_package():
     dimensions = (int(float(entry_length.get())), int(float(entry_width.get())), int(float(entry_height.get())))
     weight = float(entry_weight.get())
     quantity = int(entry_quantity.get())
-    color = colors[len(packages) % len(colors)]
-    packages.append((dimensions, weight, quantity, color))
+    is_stackable = var_stackable.get()
+    true_dimensions = dimensions
+    
+    # Set height to 220 if not stackable
+    if not is_stackable:
+        dimensions = (dimensions[0], dimensions[1], 220)
+    
+    # Assign alpha based on stackability
+    alpha = 0.5 if not is_stackable else 1.0
+    color = colors[len(packages) % len(colors)] + (alpha,)
+    
+    packages.append((dimensions, weight, quantity, color, is_stackable, true_dimensions))
     update_packages_list()
+    update_total_info()
+
+def update_total_info():
+    total_weight = 0
+    total_volume = 0
+    for dimensions, weight, quantity, _, _, true_dimensions in packages:
+        package_volume = dimensions[0]/100 * dimensions[1]/100 * true_dimensions[2]/100
+        total_weight += weight * quantity
+        total_volume += package_volume * quantity
+
+    total_info_label.config(text=f"Total Weight: {total_weight} kg, Total Volume: {total_volume} cbm")
+
 
 def update_packages_list():
     listbox_packages.delete(0, tk.END)
-    for i, (dimensions, weight, quantity, _) in enumerate(packages):
-        listbox_packages.insert(tk.END, f"Package {i+1}: {dimensions}x{quantity}, Weight: {weight}kg each")
+    for i, (_, weight, quantity, _, is_stackable, true_dimensions) in enumerate(packages):
+        stackable_str = "Non-stackable" if not is_stackable else "Stackable"
+        listbox_packages.insert(tk.END, f"Package {i+1}: {true_dimensions}x{quantity}, Weight: {weight}kg each, {stackable_str}")
 
 def remove_package():
     try:
@@ -56,6 +78,7 @@ def remove_package():
         index = listbox_packages.curselection()[0]
         packages.pop(index)
         update_packages_list()
+        update_total_info()
     except IndexError:
         pass
 
@@ -80,7 +103,7 @@ def can_fit_all_packages(container, packages):
     # Sortowanie pakietów
     sorted_packages = sorted(packages, key=lambda x: -x[0][0] * x[0][1] * x[0][2] * x[2])
     
-    for dimensions, weight, quantity, _ in sorted_packages:
+    for dimensions, weight, quantity, _, _, _ in sorted_packages:
         total_weight = weight * quantity  # Całkowita waga wszystkich pakietów tego typu
         current_weight += total_weight  # Dodanie wagi pakietów do łącznej wagi
 
@@ -122,13 +145,13 @@ def generate_package_positions(container, packages):
     space = np.ones((container[0], container[1], container[2]), dtype=np.bool_)
     sorted_packages = sorted(packages, key=lambda x: -x[0][0] * x[0][1] * x[0][2] * x[2])
     positions = []
-    for dimensions, weight, quantity, color in sorted_packages:
+    for dimensions, weight, quantity, color, is_stackable, true_dimensions in sorted_packages:
         for _ in range(quantity):
             for x in range(container[0] - dimensions[0] + 1):
                 for y in range(container[1] - dimensions[1] + 1):
                     for z in range(container[2] - dimensions[2] + 1):
                         if can_place(x, y, z, dimensions, space, container):
-                            positions.append((x, y, z, dimensions, color))
+                            positions.append((x, y, z, dimensions, color, is_stackable, true_dimensions))
                             mark_space_as_filled(x, y, z, dimensions, space)
                             break
                     else:
@@ -144,12 +167,19 @@ def visualize_packages(container, package_positions):
     ax = fig.add_subplot(111, projection='3d')
     ax.bar3d(0, 0, 0, container[0], container[1], container[2], alpha=0.1, color='gray', edgecolor='black')
 
-    for x, y, z, dimensions, color in package_positions:
-        ax.bar3d(x, y, z, dimensions[0], dimensions[1], dimensions[2], color=color, edgecolor='black', linewidth=0.5)
-
-    mapping_container = {   
-        (580, 225, 220, 25000): "20 DC",
-        (1190, 225, 220, 26700): "40 DC",
+    for x, y, z, dimensions, color, is_stackable, true_dimensions in package_positions:
+        r, g, b, alpha = color  # Rozpakowujemy wartości RGBA
+        
+        # Dodanie napisu "NS" dla paczek non-stackable
+        if not is_stackable:
+            ax.bar3d(x, y, z, dimensions[0], dimensions[1], true_dimensions[2], color=(r, g, b, alpha), edgecolor='black', linewidth=0.5)
+            ax.text(x + dimensions[0]/2, y + dimensions[1]/2, z + true_dimensions[2]/2, "NS", color='black', ha='center', va='center', fontsize=10, weight='bold')
+        else:
+            ax.bar3d(x, y, z, dimensions[0], dimensions[1], dimensions[2], color=(r, g, b, alpha), edgecolor='black', linewidth=0.5) 
+    # Mapa kontenerów
+    mapping_container = {
+        (580, 225, 220, 25000): "20 HC",
+        (1190, 225, 220, 26700): "40",
         (1190, 225, 250, 26460): "40 HC"
     }
 
@@ -162,8 +192,13 @@ def visualize_packages(container, package_positions):
     ax.set_box_aspect([4, 1, 1])  # Equal aspect ratio
     plt.show()
 
+
 root = tk.Tk()
 root.title("Package and Container Management")
+
+total_info_label = ttk.Label(root, text="")
+total_info_label.grid(row=6, column=0, columnspan=6)
+
 
 ttk.Label(root, text="Length:").grid(row=0, column=0)
 entry_length = ttk.Entry(root)
@@ -185,15 +220,23 @@ ttk.Label(root, text="Quantity:").grid(row=1, column=2)
 entry_quantity = ttk.Entry(root)
 entry_quantity.grid(row=1, column=3)
 
-ttk.Button(root, text="Submit Package", command=submit_package).grid(row=1, column=4)
-ttk.Button(root, text="Remove Package", command=remove_package).grid(row=1, column=5)
+ttk.Label(root, text="Stackable:").grid(row=1, column=4)
+var_stackable = tk.BooleanVar(value=True)
+chk_stackable = ttk.Checkbutton(root, variable=var_stackable)
+chk_stackable.grid(row=1, column=5)
+
+ttk.Button(root, text="Submit Package", command=submit_package).grid(row=2, column=4)
+ttk.Button(root, text="Remove Package", command=remove_package).grid(row=2, column=5)
 
 listbox_packages = tk.Listbox(root, width=70, height=10)
-listbox_packages.grid(row=2, column=0, columnspan=6)
+listbox_packages.grid(row=3, column=0, columnspan=6)
 
 selected_container_label = ttk.Label(root, text="")
-selected_container_label.grid(row=3, column=0, columnspan=6)
+selected_container_label.grid(row=4, column=0, columnspan=6)
 
-ttk.Button(root, text="Choose Container", command=choose_container).grid(row=4, column=0, columnspan=6)
+total_info_label = ttk.Label(root, text="")
+total_info_label.grid(row=6, column=0, columnspan=6)
+
+ttk.Button(root, text="Choose Container", command=choose_container).grid(row=5, column=0, columnspan=6)
 
 root.mainloop()
