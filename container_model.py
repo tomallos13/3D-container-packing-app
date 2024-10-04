@@ -1,5 +1,4 @@
 import tkinter as tk
-import customtkinter as ctk
 from tkinter import ttk
 from tkinter import messagebox
 import matplotlib.pyplot as plt
@@ -18,6 +17,7 @@ containers = [
 ]
 
 packages: List = []
+packages2: List = []
 colors: List[Tuple] = [
     (0.121, 0.466, 0.705),  # Blue
     (1.000, 0.498, 0.055),  # Orange
@@ -44,12 +44,21 @@ colors: List[Tuple] = [
 def submit_package():
    
     dimensions = (math.ceil(float(entry_length.get())), math.ceil(float(entry_width.get())), math.ceil(float(entry_height.get())))
+    entry_dimensions = dimensions
     weight = float(entry_weight.get())
+    entry_w = weight
     quantity = int(entry_quantity.get())
     is_stackable = var_stackable.get()
     container_type = var_container_type.get()
+    if unit_weight_var.get() == "lb":  
+        weight = weight * 0.45359237 
+    if unit_dimension_var.get() == "ft": 
+        dimensions = (np.round(dimensions[0]* 30.48,3), np.round(dimensions[1] * 30.48,3), np.round(dimensions[2] * 30.48,3))
+    if unit_dimension_var.get() == "inch":
+        dimensions = (np.round(dimensions[0]* 2.54,3), np.round(dimensions[1] * 2.54,3), np.round(dimensions[2] * 2.54,3))
+    if unit_dimension_var.get() == "cm":
+        dimensions = (np.round(dimensions[0]*1.0,3), np.round(dimensions[1]*1.0,3), np.round(dimensions[2]*1.0,3))
     true_dimensions = dimensions
-    
 
     # Adjust height based on container type and stackability
     if not is_stackable:
@@ -65,6 +74,7 @@ def submit_package():
     color = colors[len(packages) % len(colors)] + (alpha,)
     
     packages.append((dimensions, weight, quantity, color, is_stackable, true_dimensions))
+    packages2.append((entry_dimensions, entry_w, quantity, is_stackable, unit_weight_var.get(), unit_dimension_var.get()))
     update_packages_list()
     update_total_info()
 
@@ -78,18 +88,23 @@ def update_total_info():
         total_volume += package_volume * quantity
 
     total_info_label.config(text=f"Total Weight: {round(total_weight,2)} kg, Total Volume: {round(total_volume,3)} cbm")
+    #unit_total_dimension_var = tk.StringVar(value="")  # Default to "cm"
+    #total_dimension_units = ["cm", "ft", "inch"]
+    #dropdown_total_dimension = ttk.OptionMenu(root, unit_total_dimension_var,"cm", *total_dimension_units)  # Lista rozwijana dla wymiarów
+    #dropdown_total_dimension.grid(row=7, column=7)
 
 
 def update_packages_list():
     listbox_packages.delete(0, tk.END)
-    for i, (_, weight, quantity, _, is_stackable, true_dimensions) in enumerate(packages):
+    for i, (entry_dimesnions, weight, quantity, is_stackable, unit_weight, unit_dimensions) in enumerate(packages2):
         stackable_str = "Non-stackable" if not is_stackable else "Stackable"
-        listbox_packages.insert(tk.END, f"Package {i+1}: {true_dimensions}x{quantity}, Weight: {weight}kg each, {stackable_str}")
+        listbox_packages.insert(tk.END, f"Package {i+1}: {entry_dimesnions}{unit_dimensions} x{quantity}, Weight: {np.round(weight,3)}{unit_weight} each, {stackable_str}")
 
 def remove_package():
     try:
         # Get the index of the selected package and remove it
         index = listbox_packages.curselection()[0]
+        packages2.pop(index)
         packages.pop(index)
         update_packages_list()
         update_total_info()
@@ -106,11 +121,11 @@ def choose_container():
     for i, (dimensions, weight, quantity, color, is_stackable, true_dimensions) in enumerate(packages):
         if not is_stackable:
             if container_type == "HC":
-                new_dimensions = (dimensions[0], dimensions[1], 250)
+                new_dimensions = (dimensions[0], dimensions[1], 250.0)
             elif container_type == "TRUCK":
-                new_dimensions = (dimensions[0], dimensions[1], 260)
+                new_dimensions = (dimensions[0], dimensions[1], 260.0)
             else:  # Default to 220 for DC
-                new_dimensions = (dimensions[0], dimensions[1], 220)
+                new_dimensions = (dimensions[0], dimensions[1], 220.0)
             packages[i] = (new_dimensions, weight, quantity, color, is_stackable, true_dimensions)
 
     update_packages_list()
@@ -363,14 +378,15 @@ def visualize_packages(container, package_positions):
 
     # Ustawienie tytułu wykresu na podstawie mapowania kontenerów
     container_name = mapping_container.get(container, "Unknown Container")
-    ax.set_xlabel('Length', labelpad=20)
-    ax.set_ylabel('Width')
-    ax.set_zlabel('Height')
+    ax.set_xlabel('Length [cm]', labelpad=20)
+    ax.set_ylabel('Width [cm]')
+    ax.set_zlabel('Height [cm]')
     ax.set_title(f'Container: {container_name}')
     ax.set_box_aspect([4, 1, 1])  # Equal aspect ratio
     plt.show()
 
 
+# Create the main window
 root = tk.Tk()
 root.title("Package and Container Management")
 root.geometry("600x450")
@@ -378,56 +394,82 @@ root.geometry("600x450")
 total_info_label = ttk.Label(root, text="")
 total_info_label.grid(row=6, column=0, columnspan=6)
 
-
+# Length Input
 ttk.Label(root, text="Length:").grid(row=0, column=0)
 entry_length = ttk.Entry(root)
 entry_length.grid(row=0, column=1)
 
-ttk.Label(root, text="Width:").grid(row=0, column=2)
+
+
+# Width Input
+ttk.Label(root, text="Width:").grid(row=0, column=3)
 entry_width = ttk.Entry(root)
-entry_width.grid(row=0, column=3)
+entry_width.grid(row=0, column=4)
 
-ttk.Label(root, text="Height:").grid(row=0, column=4)
+# Width Unit Dropdown
+unit_dimension_var = tk.StringVar(value="cm")  # Default to "cm"
+dimension_units = ["cm", "ft", "inch"]
+dropdown_dimension = ttk.OptionMenu(root, unit_dimension_var, "cm", *dimension_units)  # Lista rozwijana dla wymiarów
+dropdown_dimension.grid(row=0, column=5)
+# Height Input
+ttk.Label(root, text="Height:").grid(row=1, column=0)
 entry_height = ttk.Entry(root)
-entry_height.grid(row=0, column=5)
+entry_height.grid(row=1, column=1)
 
-ttk.Label(root, text="Weight:").grid(row=1, column=0)
+# Weight Input
+ttk.Label(root, text="Weight:").grid(row=1, column=3)
 entry_weight = ttk.Entry(root)
-entry_weight.grid(row=1, column=1)
+entry_weight.grid(row=1, column=4)
 
-ttk.Label(root, text="Quantity:").grid(row=1, column=2)
+# Weight Unit Dropdown
+unit_weight_var = tk.StringVar(value="kg")  # Default unit
+weight_units = ["kg", "lb"]
+dropdown_weight = ttk.OptionMenu(root, unit_weight_var, "kg", *weight_units)
+dropdown_weight.grid(row=1, column=5)
+
+# Quantity
+ttk.Label(root, text="Quantity:").grid(row=2, column=0)
 entry_quantity = ttk.Entry(root)
-entry_quantity.grid(row=1, column=3)
+entry_quantity.grid(row=2, column=1)
 
-ttk.Label(root, text="Stackable:").grid(row=1, column=4)
+# Stackable
+ttk.Label(root, text="Stackable:").grid(row=2, column=2)
 var_stackable = tk.BooleanVar(value=True)
 chk_stackable = ttk.Checkbutton(root, variable=var_stackable)
-chk_stackable.grid(row=1, column=5)
+chk_stackable.grid(row=2, column=3)
 
-ttk.Label(root, text="Container Type:").grid(row=2, column=0)
+# Container Type
+ttk.Label(root, text="Container Type:").grid(row=3, column=0)
 var_container_type = tk.StringVar(value="")
 rb_dc = ttk.Radiobutton(root, text="DC", variable=var_container_type, value="DC")
-rb_dc.grid(row=2, column=1)
+rb_dc.grid(row=3, column=1)
 rb_hc = ttk.Radiobutton(root, text="HC", variable=var_container_type, value="HC")
-rb_hc.grid(row=2, column=2)
-rb_hc = ttk.Radiobutton(root, text="TRUCK", variable=var_container_type, value="TRUCK")
-rb_hc.grid(row=2, column=3)
+rb_hc.grid(row=3, column=2)
+rb_truck = ttk.Radiobutton(root, text="TRUCK", variable=var_container_type, value="TRUCK")
+rb_truck.grid(row=3, column=3)
 
-ttk.Button(root, text="Submit Package", command=submit_package).grid(row=3, column=4)
-ttk.Button(root, text="Remove Package", command=remove_package).grid(row=3, column=5)
+# Buttons
+ttk.Button(root, text="Submit Package", command=lambda: submit_package()).grid(row=3, column=4)
+ttk.Button(root, text="Remove Package", command=lambda: remove_package()).grid(row=3, column=5)
 
+# Listbox for Packages
 listbox_packages = tk.Listbox(root, width=70, height=10)
 listbox_packages.grid(row=4, column=0, columnspan=6)
 
+# Labels
 selected_container_label = ttk.Label(root, text="")
 selected_container_label.grid(row=5, column=0, columnspan=6)
 
 total_info_label = ttk.Label(root, text="")
 total_info_label.grid(row=7, column=0, columnspan=6)
 
+
+
+# Listbox for Containers Info
 containers_info = tk.Listbox(root, width=70, height=7)
 containers_info.grid(row=8, column=0, columnspan=6)
 
-ttk.Button(root, text="RUN", command=choose_container).grid(row=6, column=0, columnspan=6)
+# RUN Button
+ttk.Button(root, text="RUN", command=lambda: choose_container()).grid(row=6, column=0, columnspan=6)
 
 root.mainloop()
